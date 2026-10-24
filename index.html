@@ -110,7 +110,7 @@ body {
 
 		<script src="index.js"></script>
 		<script>
-const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":13648568,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
+const GODOT_CONFIG = {"args":[],"canvasResizePolicy":2,"emscriptenPoolSize":8,"ensureCrossOriginIsolationHeaders":false,"executable":"index","experimentalVK":false,"fileSizes":{"index.pck":15799808,"index.wasm":39514754},"focusCanvas":true,"gdextensionLibs":[],"godotPoolSize":4};
 const GODOT_THREADS_ENABLED = false;
 const engine = new Engine(GODOT_CONFIG);
 
@@ -131,6 +131,35 @@ const engine = new Engine(GODOT_CONFIG);
 	focusCanvas();
 	window.addEventListener('pointerdown', focusCanvas, true);
 	window.addEventListener('touchstart', focusCanvas, { capture: true, passive: true });
+}());
+
+// Яндекс Игры: игрок и облачное сохранение запрашиваются заранее, пока грузится движок, — тогда облачная копия
+// ложится в файл сохранения до загрузки мира. Platform (scripts/platform.gd) читает window.yaCloud: state —
+// pending | ok | guest (не вошёл в Яндекс ID: сохранение только локальное) | error; rec — запись облака (CloudSave,
+// ключ 'save') или null; window.yaPlayer — для setData. Без SDK (сборка Web, локальный запуск без sdk.js) блок
+// ничего не делает.
+(function () {
+	if (!window.yaSdk || !window.yaSdk.then) {
+		return;
+	}
+	const cloud = window.yaCloud = { state: 'pending', rec: null };
+	window.yaSdk.then(function (ysdk) {
+		return ysdk.getPlayer();
+	}).then(function (player) {
+		window.yaPlayer = player;
+		const authorized = typeof player.isAuthorized === 'function' ? player.isAuthorized() : player.getMode() !== 'lite';
+		if (!authorized) {
+			cloud.state = 'guest';
+			return null;
+		}
+		return player.getData(['save']).then(function (data) {
+			cloud.rec = (data && data.save) || null;
+			cloud.state = 'ok';
+		});
+	}).catch(function (err) {
+		console.warn('Облачное сохранение недоступно:', err);
+		cloud.state = 'error';
+	});
 }());
 
 (function () {
